@@ -53,7 +53,11 @@ jobs:
 
       - name: Restauration des donnees (DVC)
         run: |
-          dvc pull
+          echo "client_id: $([ -n "$GDRIVE_CLIENT_ID" ] && echo SET || echo EMPTY)"
+          echo "client_secret: $([ -n "$GDRIVE_CLIENT_SECRET" ] && echo SET || echo EMPTY)"
+          echo "credentials: $([ -n "$GDRIVE_USER_CREDENTIALS_DATA" ] && echo SET || echo EMPTY)"
+          dvc pull > /tmp/dvc_pull.log 2>&1 || { echo "::error::DVC PULL FAILED:"; sed 's/^/::error::/' /tmp/dvc_pull.log; exit 1; }
+          cat /tmp/dvc_pull.log
 
       - name: Execution des tests (strict)
         run: pytest tests/ -v --tb=short
