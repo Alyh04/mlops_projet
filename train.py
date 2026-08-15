@@ -107,8 +107,9 @@ def train():
         mlflow.log_params(params)
         mlflow.log_metrics({"mae": mae, "mse": mse, "r2": r2})
         mlflow.sklearn.log_model(
-            model, "model",
-            skops_trusted_types=["xgboost.core.Booster", "xgboost.sklearn.XGBRegressor"],
+            model,
+            "model",
+            serialization_format=mlflow.sklearn.SERIALIZATION_FORMAT_CLOUDPICKLE,
         )
         mlflow.set_tag("model", "XGBRegressor")
 

@@ -36,12 +36,7 @@ jobs:
 
       - name: Restauration des donnees (DVC)
         run: |
-          timeout 300 dvc pull -v > /tmp/dvc_pull.log 2>&1
-          code=$?
-          echo "dvc pull exit: $code"
-          if [ $code -ne 0 ]; then sed 's/^/::error::/' /tmp/dvc_pull.log; fi
-          tail -60 /tmp/dvc_pull.log
-          exit $code
+          timeout 300 dvc pull
 
       - name: Detection de drift
         run: python monitor.py
