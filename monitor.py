@@ -18,7 +18,7 @@ from sklearn.model_selection import train_test_split
 from evidently.report import Report
 from evidently.metric_preset import DataDriftPreset, RegressionPreset
 from evidently.test_suite import TestSuite
-from evidently.tests import TestColumnDrift, TestShareOfDriftedColumns
+from evidently.tests import TestShareOfDriftedColumns
 
 from train import build_features, DATA_DIR, TARGET
 
@@ -123,14 +123,18 @@ def run_drift_detection():
         print(f"[WARN] Rapport de performance ignore : {e}")
 
     print("[INFO] Execution des tests de drift...")
-    suite = TestSuite(tests=[TestShareOfDriftedColumns(lte=DRIFT_THRESHOLD), TestColumnDrift()])
+    suite = TestSuite(tests=[TestShareOfDriftedColumns(lte=DRIFT_THRESHOLD)])
     suite.run(reference_data=reference, current_data=current)
     suite.save_html("drift_tests.html")
 
     drift_share = None
     for t in suite.as_dict()["tests"]:
-        if "drift_share" in t.get("parameters", {}).get("features", {}):
-            drift_share = t["parameters"]["features"]["drift_share"]
+        if t.get("name") == "Share of Drifted Columns":
+            features = t.get("parameters", {}).get("features", {})
+            if features:
+                drifted = sum(1 for f in features.values() if f.get("detected"))
+                drift_share = drifted / len(features)
+            break
 
     if drift_share is None:
         print("[WARN] Seuil de drift introuvable dans les resultats")
