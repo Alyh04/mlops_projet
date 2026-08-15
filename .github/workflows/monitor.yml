@@ -11,6 +11,11 @@ on:
     - cron: "0 6 * * *"
   workflow_dispatch:
 
+env:
+  GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+  GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+  GDRIVE_USER_CREDENTIALS_DATA: ${{ secrets.GDRIVE_USER_CREDENTIALS_DATA }}
+
 jobs:
   monitor:
     name: Detection de drift
@@ -31,7 +36,7 @@ jobs:
 
       - name: Restauration des donnees (DVC)
         run: |
-          dvc pull 2>/dev/null || echo "Pas de remote DVC configure -> mode simulation"
+          dvc pull
 
       - name: Detection de drift
         run: python monitor.py

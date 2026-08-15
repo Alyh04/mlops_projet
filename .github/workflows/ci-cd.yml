@@ -24,6 +24,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE: ${{ github.repository }}
+  GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+  GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+  GDRIVE_USER_CREDENTIALS_DATA: ${{ secrets.GDRIVE_USER_CREDENTIALS_DATA }}
 
 jobs:
   # ------------------------------------------------------------
@@ -50,7 +53,7 @@ jobs:
 
       - name: Restauration des donnees (DVC)
         run: |
-          dvc pull 2>/dev/null || echo "Pas de remote DVC configure -> on continue"
+          dvc pull
 
       - name: Execution des tests (strict)
         run: pytest tests/ -v --tb=short
@@ -81,7 +84,7 @@ jobs:
 
       - name: Restauration des donnees (DVC)
         run: |
-          dvc pull 2>/dev/null || echo "Pas de remote DVC configure -> on continue"
+          dvc pull
 
       - name: Entrainement + tracking MLflow
         run: python train.py
