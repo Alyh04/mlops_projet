@@ -56,8 +56,13 @@ jobs:
           echo "client_id: $([ -n "$GDRIVE_CLIENT_ID" ] && echo SET || echo EMPTY)"
           echo "client_secret: $([ -n "$GDRIVE_CLIENT_SECRET" ] && echo SET || echo EMPTY)"
           echo "credentials: $([ -n "$GDRIVE_USER_CREDENTIALS_DATA" ] && echo SET || echo EMPTY)"
-          dvc pull > /tmp/dvc_pull.log 2>&1 || { echo "::error::DVC PULL FAILED:"; sed 's/^/::error::/' /tmp/dvc_pull.log; exit 1; }
-          cat /tmp/dvc_pull.log
+          python -c "import json,os;d=json.loads(os.environ['GDRIVE_USER_CREDENTIALS_DATA']);print('JSON OK, clefs:', sorted(d.keys()))" || echo "::error::JSON GDRIVE_USER_CREDENTIALS_DATA invalide"
+          timeout 150 dvc pull -v > /tmp/dvc_pull.log 2>&1
+          code=$?
+          echo "dvc pull exit: $code"
+          if [ $code -ne 0 ]; then sed 's/^/::error::/' /tmp/dvc_pull.log; fi
+          tail -60 /tmp/dvc_pull.log
+          exit $code
 
       - name: Execution des tests (strict)
         run: pytest tests/ -v --tb=short
@@ -88,7 +93,12 @@ jobs:
 
       - name: Restauration des donnees (DVC)
         run: |
-          dvc pull
+          timeout 300 dvc pull -v > /tmp/dvc_pull.log 2>&1
+          code=$?
+          echo "dvc pull exit: $code"
+          if [ $code -ne 0 ]; then sed 's/^/::error::/' /tmp/dvc_pull.log; fi
+          tail -60 /tmp/dvc_pull.log
+          exit $code
 
       - name: Entrainement + tracking MLflow
         run: python train.py
