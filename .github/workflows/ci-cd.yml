@@ -1,3 +1,18 @@
+# ================================================================
+# ci-cd.yml - Pipeline CI/CD complet du projet MLOps Aviator
+#
+#   1. test  : tests unitaires pytest STRICTS (chaque push/PR)
+#   2. train : entrainement du modele en Python 3.10 (reproductible)
+#   3. build : image Docker + push vers GHCR (cache Docker)
+#   4. deploy: declenchement du deploiement Railway
+#
+# Version des Actions (compatibles GitHub Actions) :
+#   actions/checkout@v4, actions/setup-python@v5,
+#   docker/setup-buildx-action@v3, docker/login-action@v3,
+#   docker/build-push-action@v6, actions/upload-artifact@v4,
+#   actions/download-artifact@v4
+# ================================================================
+
 name: CI/CD Pipeline
 
 on:
@@ -6,35 +21,148 @@ on:
   pull_request:
     branches: [main, master]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}
 
-      - name: Set up Python 3.10
+jobs:
+  # ------------------------------------------------------------
+  # 1. TESTS UNITAIRES (pytest strict)
+  # ------------------------------------------------------------
+  test:
+    name: Tests unitaires (pytest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Configuration Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: "pip"
 
-      - name: Install dependencies
+      - name: Installation des dependances
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Restauration des donnees (DVC)
         run: |
-          if [ -d tests/ ]; then pytest tests/ -v; else echo "No tests/ directory found - skipping"; fi
+          dvc pull 2>/dev/null || echo "Pas de remote DVC configure -> on continue"
 
-  build:
+      - name: Execution des tests (strict)
+        run: pytest tests/ -v --tb=short
+
+  # ------------------------------------------------------------
+  # 2. ENTRAINEMENT DU MODELE (Python 3.10)
+  # Le modele est REENTRAINE a chaque CI afin d'etre garanti
+  # compatible avec l'environnement de production (sklearn 1.6.1).
+  # Necessite un remote DVC configure (S3/GCS/Drive) pour la donnee.
+  # ------------------------------------------------------------
+  train:
+    name: Entrainement du modele
     needs: test
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Configuration Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Installation des dependances
+        run: pip install -r requirements-dev.txt
+
+      - name: Restauration des donnees (DVC)
+        run: |
+          dvc pull 2>/dev/null || echo "Pas de remote DVC configure -> on continue"
+
+      - name: Entrainement + tracking MLflow
+        run: python train.py
+
+      - name: Upload du modele
+        uses: actions/upload-artifact@v4
+        with:
+          name: model
+          path: models/
+          retention-days: 1
+
+  # ------------------------------------------------------------
+  # 3. BUILD DE L'IMAGE DOCKER + PUSH VERS GHCR
+  # ------------------------------------------------------------
+  build:
+    name: Build image Docker + push GHCR
+    needs: [test, train]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Recuperation du modele entraine en CI
+        uses: actions/download-artifact@v4
+        with:
+          name: model
+          path: models/
+
+      - name: Configuration Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
-        run: docker build -t aviator-api:latest .
+      - name: Authentification GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build et push de l'image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ------------------------------------------------------------
+  # 4. DEPLOIEMENT RAILWAY
+  #
+  # MODE N 1 (recommandé, zero configuration) - Application native :
+  #   1. Installer l'app GitHub "Railway" depuis le Marketplace
+  #   2. Connecter ce repo et la branche main a un projet Railway
+  #   3. Railway deploie automatiquement a chaque push sur main
+  #      (aucun secret necessaire -> ce job est alors ignore)
+  #
+  # MODE N 2 (CI) - CLI Railway :
+  #   1. Railway > Projet > Settings > Tokens > creer un token projet
+  #   2. GitHub > Settings > Secrets > RAILWAY_TOKEN et RAILWAY_SERVICE_ID
+  #   3. Ce job se declenche alors automatiquement apres le build
+  # ------------------------------------------------------------
+  deploy:
+    name: Deploiement Railway
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.RAILWAY_TOKEN != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Installation du CLI Railway
+        run: npm install -g @railway/cli
+
+      - name: Deploiement vers Railway
+        run: railway up --detach --service "${{ secrets.RAILWAY_SERVICE_ID }}"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

@@ -1,0 +1,5 @@
+outs:
+- md5: 4b0cdad54274a72e3860b7486969db93
+  size: 3644178
+  hash: md5
+  path: multipliers.csv

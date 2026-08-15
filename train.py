@@ -6,6 +6,7 @@ enregistre les metriques dans MLflow et exporte Model.pkl.
 """
 
 import os
+import hashlib
 import warnings
 import joblib
 import mlflow
@@ -27,54 +28,60 @@ RANDOM_STATE = 42
 TEST_SIZE = 0.2
 
 
+def file_md5(path: str) -> str:
+    """Empreinte MD5 = version des donnees (a remplacer par dvc.get_hash si besoin)."""
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def build_features(series: pd.Series, blocks: np.ndarray) -> pd.DataFrame:
+    """Features lag/rolling calculees SANS croiser la frontiere entre les 2 blocs."""
+    feat = pd.DataFrame({"multiplier": series, "block": blocks})
+    parts = []
+    for _, sub in feat.groupby("block", sort=False):
+        m = sub["multiplier"]
+        p = pd.DataFrame(index=sub.index)
+        p["mult_lag1"] = m.shift(1)
+        p["mult_lag2"] = m.shift(2)
+        p["mult_lag3"] = m.shift(3)
+        p["roll_mean_3"] = m.rolling(3).mean()
+        p["roll_mean_5"] = m.rolling(5).mean()
+        p["roll_std_3"] = m.rolling(3).std()
+        p["roll_std_5"] = m.rolling(5).std()
+        p["roll_max_3"] = m.rolling(3).max()
+        p["roll_min_3"] = m.rolling(3).min()
+        p["ewm_mean"] = m.ewm(span=5).mean()
+        parts.append(p)
+    feats = pd.concat(parts).sort_index()
+    feats["mult_ratio_lag1"] = series / (feats["mult_lag1"] + 1e-9)
+    return pd.concat([feat, feats], axis=1).dropna().reset_index(drop=True)
+
+
 def load_data():
-    """Charge les deux jeux de donnees et les fusionne."""
+    """Charge les deux jeux, fusionne et construit les features."""
     aviator = pd.read_csv(f"{DATA_DIR}/aviator_dataset.csv")
     multipliers = pd.read_csv(f"{DATA_DIR}/multipliers.csv")
 
-    print("[INFO] aviator_dataset.csv - shape:", aviator.shape)
-    print("[INFO] multipliers.csv   - shape:", multipliers.shape)
+    s1 = aviator[TARGET].dropna().reset_index(drop=True)
+    s2 = multipliers["Multiplier"].dropna().reset_index(drop=True)
+    blocks = np.repeat([0, 1], [len(s1), len(s2)])
 
-    all_multipliers = pd.concat(
-        [aviator[TARGET], multipliers["Multiplier"]],
-        axis=0,
-        ignore_index=True,
-    ).dropna()
-
-    print(f"[INFO] Total multiplicateurs unifies : {len(all_multipliers)}")
-
-    feat = pd.DataFrame({"multiplier": all_multipliers})
-    feat = feat.sort_index()
-
-    feat["mult_lag1"] = feat["multiplier"].shift(1)
-    feat["mult_lag2"] = feat["multiplier"].shift(2)
-    feat["mult_lag3"] = feat["multiplier"].shift(3)
-    feat["roll_mean_3"] = feat["multiplier"].rolling(3).mean()
-    feat["roll_mean_5"] = feat["multiplier"].rolling(5).mean()
-    feat["roll_std_3"] = feat["multiplier"].rolling(3).std()
-    feat["roll_std_5"] = feat["multiplier"].rolling(5).std()
-    feat["roll_max_3"] = feat["multiplier"].rolling(3).max()
-    feat["roll_min_3"] = feat["multiplier"].rolling(3).min()
-    feat["ewm_mean"] = feat["multiplier"].ewm(span=5).mean()
-    feat["mult_ratio_lag1"] = feat["multiplier"] / (feat["mult_lag1"] + 1e-9)
-
-    feat = feat.dropna().reset_index(drop=True)
-
-    X = feat.drop(columns=["multiplier"])
+    feat = build_features(pd.concat([s1, s2], ignore_index=True), blocks)
+    X = feat.drop(columns=["multiplier", "block"])
     y = feat["multiplier"]
-
-    print(f"[INFO] Features shape        : {X.shape}")
-    print(f"[INFO] Features columns       : {list(X.columns)}")
+    print(f"[INFO] Features shape : {X.shape}")
     return X, y
 
 
 def train():
-    """Entraine un XGBoost et logge dans MLflow."""
     X, y = load_data()
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
-    )
+    split_idx = int(len(X) * (1 - TEST_SIZE))
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
     params = {
         "n_estimators": 300,
@@ -104,6 +111,9 @@ def train():
             skops_trusted_types=["xgboost.core.Booster", "xgboost.sklearn.XGBRegressor"],
         )
         mlflow.set_tag("model", "XGBRegressor")
+
+        for f in ("aviator_dataset.csv", "multipliers.csv"):
+            mlflow.log_param(f"data_md5/{f}", file_md5(f"{DATA_DIR}/{f}"))
 
         os.makedirs(MODEL_DIR, exist_ok=True)
         joblib.dump(model, MODEL_PATH)

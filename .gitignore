@@ -1,0 +1,26 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Donnees brutes - versionnees par DVC (les .dvc restent dans git)
+data/*
+!data/*.dvc
+
+# Artefacts MLflow / DVC / rapports
+mlruns/
+.mlruns/
+Projet%20MLOps/
+mlflow.db
+.dvc/cache/
+.dvc/tmp/
+*.html
+
+# Predictions collectees par l'API
+predictions/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/

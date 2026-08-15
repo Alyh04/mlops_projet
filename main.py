@@ -2,16 +2,25 @@
 main.py - API FastAPI de prediction Aviator.
 Charge models/Model.pkl et expose:
   GET  /        -> health-check
+  GET  /model-info -> metadonnees du modele
   POST /predict -> prediction du multiplicateur
+Chaque requete est journalisee dans predictions/predictions.jsonl
+pour alimenter le monitoring (feedback loop).
 """
+
+import json
+import os
+import uuid
+from datetime import datetime, timezone
 
 import joblib
 import pandas as pd
-import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 MODEL_PATH = "models/Model.pkl"
+PREDICTIONS_DIR = "predictions"
+PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "predictions.jsonl")
 
 app = FastAPI(title="Aviator Predictor API", version="1.0.0")
 
@@ -22,6 +31,20 @@ except Exception as e:
     model = None
     FEATURE_NAMES = None
     print(f"[WARN] Impossible de charger le modele : {e}")
+
+
+def log_prediction(input_data: dict, prediction: float) -> str:
+    """Sauvegarde de chaque requete -> source de la boucle de retrain."""
+    os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+    record = {
+        "prediction_id": str(uuid.uuid4()),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "features": input_data,
+        "prediction": round(prediction, 4),
+    }
+    with open(PREDICTIONS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+    return record["prediction_id"]
 
 
 class PredictInput(BaseModel):
@@ -40,6 +63,7 @@ class PredictInput(BaseModel):
 
 class PredictOutput(BaseModel):
     prediction: float
+    prediction_id: str
     features_used: list[str]
 
 
@@ -50,6 +74,11 @@ def health():
         "model_loaded": model is not None,
         "timestamp": str(pd.Timestamp.now()),
     }
+
+
+@app.get("/model-info", tags=["Health"])
+def model_info():
+    return {"model_loaded": model is not None, "features": FEATURE_NAMES}
 
 
 @app.post("/predict", response_model=PredictOutput, tags=["Prediction"])
@@ -68,5 +97,10 @@ def predict(input_data: PredictInput):
             )
         df = df[FEATURE_NAMES]
 
-    pred = model.predict(df)[0]
-    return PredictOutput(prediction=round(float(pred), 4), features_used=list(df.columns))
+    pred = float(model.predict(df)[0])
+    pred_id = log_prediction(input_data.model_dump(), pred)
+    return PredictOutput(
+        prediction=round(pred, 4),
+        prediction_id=pred_id,
+        features_used=list(df.columns),
+    )

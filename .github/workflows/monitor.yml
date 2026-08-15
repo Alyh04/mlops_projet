@@ -1,0 +1,40 @@
+# ================================================================
+# monitor.yml - Detection de Data Drift planifiee (feedback loop)
+#   - cron quotidien : detection de drift Evidently
+#   - si drift > seuil (20%) : alerte Slack + retrain + versionnage DVC
+# ================================================================
+
+name: Drift Monitoring
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    name: Detection de drift
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Configuration Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Installation des dependances
+        run: pip install -r requirements-dev.txt
+
+      - name: Restauration des donnees (DVC)
+        run: |
+          dvc pull 2>/dev/null || echo "Pas de remote DVC configure -> mode simulation"
+
+      - name: Detection de drift
+        run: python monitor.py
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          RETRAIN_ON_DRIFT: "1"
