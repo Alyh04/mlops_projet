@@ -155,17 +155,21 @@ jobs:
   deploy:
     name: Deploiement Railway
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.RAILWAY_TOKEN != ''
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    env:
+      RAILWAY_CONFIGURED: ${{ secrets.RAILWAY_TOKEN != '' }}
 
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
 
       - name: Installation du CLI Railway
+        if: env.RAILWAY_CONFIGURED == 'true'
         run: npm install -g @railway/cli
 
       - name: Deploiement vers Railway
+        if: env.RAILWAY_CONFIGURED == 'true'
         run: railway up --detach --service "${{ secrets.RAILWAY_SERVICE_ID }}"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
