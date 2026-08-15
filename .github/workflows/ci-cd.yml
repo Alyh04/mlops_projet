@@ -26,7 +26,7 @@ env:
   IMAGE: ${{ github.repository }}
   GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
   GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
-  GDRIVE_USER_CREDENTIALS_DATA: ${{ secrets.GDRIVE_USER_CREDENTIALS_DATA }}
+  GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_USER_CREDENTIALS_DATA }}
 
 jobs:
   # ------------------------------------------------------------
@@ -55,8 +55,8 @@ jobs:
         run: |
           echo "client_id: $([ -n "$GDRIVE_CLIENT_ID" ] && echo SET || echo EMPTY)"
           echo "client_secret: $([ -n "$GDRIVE_CLIENT_SECRET" ] && echo SET || echo EMPTY)"
-          echo "credentials: $([ -n "$GDRIVE_USER_CREDENTIALS_DATA" ] && echo SET || echo EMPTY)"
-          if python -c "import json,os;d=json.loads(os.environ['GDRIVE_USER_CREDENTIALS_DATA']);print('JSON OK, clefs:', sorted(d.keys()))" 2>/tmp/json_err.txt; then
+          echo "credentials: $([ -n "$GDRIVE_CREDENTIALS_DATA" ] && echo SET || echo EMPTY)"
+          if python -c "import json,os;d=json.loads(os.environ['GDRIVE_CREDENTIALS_DATA']);print('JSON OK, clefs:', sorted(d.keys()))" 2>/tmp/json_err.txt; then
             echo "JSON OK"
           else
             echo "::error::JSON INVALIDE:"
