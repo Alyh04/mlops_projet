@@ -19,7 +19,7 @@ import tempfile
 from huggingface_hub import HfApi
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
-SPACE_ID = os.environ.get("HF_SPACE_ID") or "Alyh04/aviator-predictor"
+SPACE_ID = os.environ.get("HF_SPACE_ID") or "Zahoavao/aviator-predictor"
 
 if not HF_TOKEN:
     raise SystemExit("[ERREUR] Variable d'env HF_TOKEN manquante.")
