@@ -34,6 +34,11 @@ jobs:
       - name: Installation des dependances
         run: pip install -r requirements-dev.txt
 
+      - name: Configuration du remote GDrive (client OAuth perso)
+        run: |
+          dvc remote modify --local storage gdrive_client_id "$GDRIVE_CLIENT_ID"
+          dvc remote modify --local storage gdrive_client_secret "$GDRIVE_CLIENT_SECRET"
+
       - name: Restauration des donnees (DVC)
         run: |
           timeout 300 dvc pull
