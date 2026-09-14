@@ -165,6 +165,37 @@ jobs:
   #   2. GitHub > Settings > Secrets > RAILWAY_TOKEN et RAILWAY_SERVICE_ID
   #   3. Ce job se declenche alors automatiquement apres le build
   # ------------------------------------------------------------
+  # ------------------------------------------------------------
+  # 3.b DEPLOIEMENT HUGGING FACE (Space Gradio)
+  # Necessite le secret HF_TOKEN (https://huggingface.co/settings/tokens,
+  # type "write"). Le Space est cree automatiquement au premier run.
+  # Nom du Space controlable via le secret optionnel HF_SPACE_ID.
+  # ------------------------------------------------------------
+  deploy-hf:
+    name: Deploiement Hugging Face (Space Gradio)
+    needs: train
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Recuperation du modele entraine en CI
+        uses: actions/download-artifact@v4
+        with:
+          name: model
+          path: models/
+
+      - name: Installation de huggingface_hub
+        run: python -m pip install "huggingface_hub>=0.23"
+
+      - name: Push vers le Space Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
+        run: python ci/hf_deploy.py
+
   deploy:
     name: Deploiement Railway
     needs: build
